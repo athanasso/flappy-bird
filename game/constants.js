@@ -13,7 +13,7 @@ export const BIRD_Y = Math.round(height / 2);
 // Pipes
 export const PIPE_WIDTH = 64;
 export const PIPE_GAP = 220; // vertical gap between top and bottom pipe (wider = easier)
-export const PIPE_SPEED = -3; // horizontal speed (pixels per frame)
+export const PIPE_SPEED = -2; // horizontal speed (pixels per frame)
 export const PIPE_SPAWN_X = width + PIPE_WIDTH + width * 0.4; // respawn further right for spacing
 
 // Floor
@@ -26,8 +26,8 @@ export const FLAP_VELOCITY = -5;
 export const MAX_VELOCITY = 8;
 
 // Difficulty
-export const SPEED_INCREMENT = 0.4; // speed increase per interval
-export const SCORE_INTERVAL = 5; // increase difficulty every N points
+export const SPEED_INCREMENT = 0.15; // gentle speed increase per interval
+export const SCORE_INTERVAL = 10; // increase difficulty every N points
 
 // Colors
 export const COLORS = {

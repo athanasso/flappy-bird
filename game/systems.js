@@ -9,15 +9,16 @@ import {
   PIPE_SPAWN_X,
   PIPE_SPEED,
   PIPE_WIDTH,
-  WINDOW_HEIGHT
+  WINDOW_HEIGHT,
 } from './constants';
 import SoundManager from './SoundManager';
 
 /* ─── Helper ──────────────────────────────────────── */
 
-const randomGapY = () => {
+const randomGapY = (gap) => {
+  const pipeGap = gap || PIPE_GAP;
   const minGapTop = 100;
-  const maxGapTop = WINDOW_HEIGHT - FLOOR_HEIGHT - PIPE_GAP - 100;
+  const maxGapTop = WINDOW_HEIGHT - FLOOR_HEIGHT - pipeGap - 100;
   return Math.floor(Math.random() * (maxGapTop - minGapTop)) + minGapTop;
 };
 
@@ -29,8 +30,12 @@ const Physics = (entities, { touches, time, dispatch }) => {
 
   const body = bird.body;
 
+  // Use level gravity if available
+  const levelConfig = entities.levelConfig;
+  const gravity = levelConfig?.gravity || GRAVITY;
+
   // Apply gravity
-  body.velocity.y += GRAVITY * (time.delta / 16.67); // normalize to ~60fps
+  body.velocity.y += gravity * (time.delta / 16.67);
 
   // Clamp max fall speed
   if (body.velocity.y > MAX_VELOCITY) {
@@ -52,20 +57,66 @@ const Physics = (entities, { touches, time, dispatch }) => {
 
 /* ─── SYSTEM: Pipe Movement ───────────────────────── */
 
-const MovePipes = (entities, { dispatch }) => {
+const MovePipes = (entities, { time, dispatch }) => {
   const speed = entities.pipeSpeed || PIPE_SPEED;
+  const levelConfig = entities.levelConfig;
+  const pipeGap = levelConfig?.pipeGap || PIPE_GAP;
+  const specials = levelConfig?.specials || [];
+
+  // Speed burst special — random speed variations
+  let effectiveSpeed = speed;
+  if (specials.includes('speed_bursts')) {
+    // Every ~3 seconds, apply a burst
+    const burstChance = 0.005; // per frame
+    if (Math.random() < burstChance) {
+      entities._speedBurst = 60; // frames of burst
+    }
+    if (entities._speedBurst > 0) {
+      effectiveSpeed = speed * 1.5;
+      entities._speedBurst -= 1;
+    }
+  }
 
   const pipePairs = [
     { top: entities.pipeTop1, bottom: entities.pipeBottom1, scored: 'scored1' },
     { top: entities.pipeTop2, bottom: entities.pipeBottom2, scored: 'scored2' },
   ];
 
-  pipePairs.forEach(({ top, bottom, scored }) => {
+  pipePairs.forEach(({ top, bottom, scored }, idx) => {
     if (!top || !bottom) return;
 
     // Move pipes left
-    top.body.position.x += speed;
-    bottom.body.position.x += speed;
+    top.body.position.x += effectiveSpeed;
+    bottom.body.position.x += effectiveSpeed;
+
+    // Moving pipes special — gap oscillates by extending/retracting pipe heights
+    if (specials.includes('moving_pipes')) {
+      const moveKey = `_pipeMove${idx}`;
+      const baseKey = `_pipeBase${idx}`;
+      entities[moveKey] = (entities[moveKey] || 0) + 0.025;
+
+      // Store original gap center on first frame
+      if (entities[baseKey] === undefined) {
+        const topH = top.size[1];
+        const bottomH = bottom.size[1];
+        entities[baseKey] = topH + pipeGap / 2; // center of gap
+      }
+
+      const baseGapCenter = entities[baseKey];
+      const oscillation = Math.sin(entities[moveKey]) * 40; // ±40px
+      const newGapCenter = baseGapCenter + oscillation;
+
+      // Top pipe: stretches from y=0 down to gap opening
+      const newTopHeight = Math.max(30, newGapCenter - pipeGap / 2);
+      top.size = [PIPE_WIDTH, newTopHeight];
+      top.body.position.y = newTopHeight / 2;
+
+      // Bottom pipe: stretches from gap bottom to floor
+      const bottomStart = newTopHeight + pipeGap;
+      const newBottomHeight = Math.max(30, FLOOR_Y - bottomStart);
+      bottom.size = [PIPE_WIDTH, newBottomHeight];
+      bottom.body.position.y = bottomStart + newBottomHeight / 2;
+    }
 
     // Check if bird passed pipes (for scoring)
     const bird = entities.bird;
@@ -78,9 +129,9 @@ const MovePipes = (entities, { dispatch }) => {
 
     // Respawn pipe when it goes off-screen left
     if (top.body.position.x < -PIPE_WIDTH) {
-      const gapTop = randomGapY();
+      const gapTop = randomGapY(pipeGap);
       const topHeight = gapTop;
-      const bottomY = gapTop + PIPE_GAP;
+      const bottomY = gapTop + pipeGap;
       const bottomHeight = FLOOR_Y - bottomY;
 
       top.body.position.x = PIPE_SPAWN_X;
@@ -92,6 +143,10 @@ const MovePipes = (entities, { dispatch }) => {
       bottom.size = [PIPE_WIDTH, bottomHeight];
 
       entities[scored] = false;
+
+      // Reset moving pipe base position for new gap
+      const baseKey = `_pipeBase${idx}`;
+      delete entities[baseKey];
     }
   });
 
@@ -106,7 +161,7 @@ const CollisionDetection = (entities, { dispatch }) => {
 
   const bx = bird.body.position.x;
   const by = bird.body.position.y;
-  const bRadius = BIRD_SIZE / 2 - 2; // slightly smaller for forgiving hitbox
+  const bRadius = BIRD_SIZE / 2 - 2;
 
   // Floor collision
   if (by + bRadius >= FLOOR_Y) {
@@ -159,16 +214,8 @@ const CollisionDetection = (entities, { dispatch }) => {
   return entities;
 };
 
-/* ─── SYSTEM: Dynamic Difficulty ──────────────────── */
-
-const DifficultyScaling = (entities, { dispatch }) => {
-  // Speed is stored on entities so it persists across frames
-  // It's updated by the score handler in the game screen
-  return entities;
-};
-
 /* ─── Export all systems ──────────────────────────── */
 
-export { CollisionDetection, DifficultyScaling, MovePipes, Physics };
+export { CollisionDetection, MovePipes, Physics };
 
 export default [Physics, MovePipes, CollisionDetection];
